@@ -12,29 +12,22 @@ code {
     monospace;
 }
 
-.nav-link{
-  margin-left: 40px;
+
+.navbar-nav {
+  display: flex !important;
+  visibility: visible !important;
 }
 
-#supportHero{
-  background-color: rgb(56, 126, 209);
-  color: white;
+.nav-item {
+  display: flex !important;
 }
 
-#supportHero a{
-  color: white;
+.nav-link {
+  display: block !important;
+  color: #000 !important;
 }
 
-#supportWrapper{
-  display: flex;
-  justify-content: space-between;
-  margin: 0 150px;
-}
 
-#supportHero input{
-  padding: 20px 50px;
-  width: 100%;
-  font-size: 20px;
-  border-radius: 10px;
-  border: none;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

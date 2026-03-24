@@ -1,15 +1,32 @@
-import React from "react";
+import React from 'react';
+import { ValuesSection, WhySection } from './Values';
+import StatsSection from './Stats';
+import AboutHero from './Hero';
+import VisionSection from './Vision';
+import MissionSection from './Mission';
 
-import Hero from "./Hero";
-import Team from "./Team";
-
-function PricingPage() {
+const About = () => {
   return (
-    <>
-      <Hero />
-      <Team />
-    </>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      {/* Hero Section */}
+      <AboutHero />
+      
+      {/* Vision Section */}
+      <VisionSection />
+      
+      {/* Mission Section */}
+      <MissionSection />
+      
+      {/* Values Section */}
+      <ValuesSection />
+      
+      {/* Why We Built This */}
+      <WhySection />
+      
+      {/* Stats Section */}
+      <StatsSection />
+    </div>
   );
-}
+};
 
-export default PricingPage;
+export default About;

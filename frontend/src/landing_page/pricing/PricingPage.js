@@ -1,16 +1,23 @@
-import React from "react";
-import Hero from "./Hero";
-import Brokerage from "./Brokerage";
-import OpenAccount from "../OpenAccount";
+import React, { useState } from 'react';
+import PricingHero from './hero';
+import PricingFAQ from './FAQ';
+import PricingCards from './Card';
 
-function PricingPage() {
+const Pricing = () => {
+  const [billingCycle, setBillingCycle] = useState('monthly');
+
   return (
-    <>
-      <Hero />
-      <OpenAccount />
-      <Brokerage />
-    </>
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+      {/* Hero Section */}
+      <PricingHero billingCycle={billingCycle} setBillingCycle={setBillingCycle} />
+      
+      {/* Pricing Cards */}
+      <PricingCards billingCycle={billingCycle} />
+      
+      {/* FAQ Section */}
+      <PricingFAQ />
+    </div>
   );
-}
+};
 
-export default PricingPage;
+export default Pricing;
