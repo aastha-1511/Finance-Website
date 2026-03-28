@@ -19,13 +19,20 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const allowedOrigins = [
+  "https://finance-website-orpin.vercel.app",
+  "https://financehub-iota.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+];
+
 const io = new Server(server, {
-  cors: { origin: "*", methods: ["GET", "POST"] }
+  cors: { origin: allowedOrigins, methods: ["GET", "POST"] }
 });
 
 connectDB();
 
-app.use(cors({ origin: "*", methods: ["GET", "POST", "PUT", "DELETE"] }));
+app.use(cors({ origin: allowedOrigins, methods: ["GET", "POST", "PUT", "DELETE"], credentials: true }));
 app.use(express.json());
 
 // Routes
