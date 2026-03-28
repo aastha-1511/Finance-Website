@@ -3,208 +3,194 @@ import { cacheGet, cacheSet } from '../utils/cache.js';
 
 const router = express.Router();
 
-const AV_KEY  = process.env.ALPHA_VANTAGE_KEY;
-const AV_BASE = 'https://www.alphavantage.co/query';
-
-// Indian stocks — Alpha Vantage uses BSE exchange (.BSE suffix)
-const STOCK_MAP = [
-    { symbol: 'RELIANCE.NS',   avSym: 'RELIANCE.BSE',     name: 'Reliance Industries' },
-    { symbol: 'TCS.NS',        avSym: 'TCS.BSE',           name: 'Tata Consultancy Services' },
-    { symbol: 'HDFCBANK.NS',   avSym: 'HDFCBANK.BSE',      name: 'HDFC Bank' },
-    { symbol: 'INFY.NS',       avSym: 'INFY.BSE',          name: 'Infosys' },
-    { symbol: 'SBIN.NS',       avSym: 'SBIN.BSE',          name: 'State Bank of India' },
-    { symbol: 'ICICIBANK.NS',  avSym: 'ICICIBANK.BSE',     name: 'ICICI Bank' },
-    { symbol: 'ITC.NS',        avSym: 'ITC.BSE',           name: 'ITC Limited' },
-    { symbol: 'WIPRO.NS',      avSym: 'WIPRO.BSE',         name: 'Wipro' },
-    { symbol: 'BAJFINANCE.NS', avSym: 'BAJFINANCE.BSE',    name: 'Bajaj Finance' },
-    { symbol: 'AXISBANK.NS',   avSym: 'AXISBANK.BSE',      name: 'Axis Bank' },
-    { symbol: 'KOTAKBANK.NS',  avSym: 'KOTAKBANK.BSE',     name: 'Kotak Mahindra Bank' },
-    { symbol: 'HINDUNILVR.NS', avSym: 'HINDUNILVR.BSE',    name: 'Hindustan Unilever' },
-    { symbol: 'TITAN.NS',      avSym: 'TITAN.BSE',         name: 'Titan Company' },
-    { symbol: 'ADANIENT.NS',   avSym: 'ADANIENT.BSE',      name: 'Adani Enterprises' },
-    { symbol: 'ONGC.NS',       avSym: 'ONGC.BSE',          name: 'ONGC' },
+// NSE stocks we care about
+const STOCK_LIST = [
+    'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'SBIN',
+    'ICICIBANK', 'ITC', 'WIPRO', 'BAJFINANCE', 'AXISBANK',
+    'KOTAKBANK', 'HINDUNILVR', 'TITAN', 'ADANIENT', 'ONGC'
 ];
 
-// 24-hour cache so 15 stocks/day = well within 25 calls/day free limit
-const TTL_PRICES  = 24 * 3600;
-const TTL_HISTORY = 24 * 3600;
+const NSE_BASE    = 'https://www.nseindia.com';
+const TTL_PRICES  = 60;   // 60s — real-time enough
+const TTL_HISTORY = 300;  // 5 min for historical
 
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// ── NSE session management ────────────────────────────────────────────────────
+// NSE requires a cookie obtained by first visiting the homepage
+let _session = { cookie: '', ts: 0 };
 
-// Fetch a single stock quote from Alpha Vantage
-async function fetchAVQuote(avSym) {
-    const url = `${AV_BASE}?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(avSym)}&apikey=${AV_KEY}`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-    const q = data['Global Quote'];
-    if (!q || !q['05. price']) return null;
-    return {
-        price:         parseFloat(q['05. price'])           || 0,
-        change:        parseFloat(q['09. change'])           || 0,
-        changePercent: parseFloat(q['10. change percent'])   || 0,
-        open:          parseFloat(q['02. open'])             || 0,
-        high:          parseFloat(q['03. high'])             || 0,
-        low:           parseFloat(q['04. low'])              || 0,
-        volume:        parseInt(q['06. volume'])             || 0,
-    };
+const NSE_HEADERS = {
+    'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept':          'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Referer':         'https://www.nseindia.com/',
+    'Connection':      'keep-alive',
+};
+
+async function getSession() {
+    // Refresh cookie every 4 minutes
+    if (_session.cookie && Date.now() - _session.ts < 4 * 60 * 1000) {
+        return _session.cookie;
+    }
+    try {
+        const resp = await fetch(NSE_BASE + '/', {
+            headers: {
+                ...NSE_HEADERS,
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            },
+            redirect: 'follow',
+        });
+        const raw = resp.headers.get('set-cookie') || '';
+        // Extract key=value pairs, join with '; '
+        const cookie = raw
+            .split(/,(?=[^ ].*?=)/)
+            .map(p => p.trim().split(';')[0])
+            .filter(Boolean)
+            .join('; ');
+        _session = { cookie, ts: Date.now() };
+        console.log('✅ NSE session refreshed');
+        return cookie;
+    } catch (e) {
+        console.error('NSE session error:', e.message);
+        return '';
+    }
 }
 
-// ── GET /prices ──────────────────────────────────────────────────────────────
-// Returns all stocks — tries cache first, fetches from AV if needed.
-// Sequential fetching with 13s delay keeps us under 5 req/min rate limit.
+async function nseGet(path) {
+    const cookie = await getSession();
+    const resp = await fetch(NSE_BASE + path, {
+        headers: { ...NSE_HEADERS, Cookie: cookie },
+    });
+    if (!resp.ok) throw new Error(`NSE ${resp.status}: ${path}`);
+    return resp.json();
+}
+
+// ── GET /prices ───────────────────────────────────────────────────────────────
+// Fetches ALL NIFTY 50 stocks in ONE call, filters our 15
 router.get('/prices', async (req, res) => {
-    if (!AV_KEY) {
-        console.error('ALPHA_VANTAGE_KEY is not set');
-        return res.status(500).json({ message: 'Stock API key not configured' });
-    }
-
     const requestedSymbols = req.query.symbols
-        ? req.query.symbols.split(',')
-        : STOCK_MAP.map(s => s.symbol);
+        ? req.query.symbols.split(',').map(s => s.replace('.NS', ''))
+        : STOCK_LIST;
 
-    const stocks = STOCK_MAP.filter(s => requestedSymbols.includes(s.symbol));
+    const cacheKey = `nse_prices:${requestedSymbols.join(',')}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return res.json(cached);
 
-    // Serve from cache where available
-    const results = [];
-    const toFetch = [];
-
-    for (const stock of stocks) {
-        const cached = await cacheGet(`av_price:${stock.symbol}`);
-        if (cached) {
-            results.push(cached);
-        } else {
-            toFetch.push(stock);
-        }
-    }
-
-    // Return cached data immediately, fetch missing ones in background
-    if (toFetch.length === 0) return res.json(results);
-
-    // If we have some cached data, return it now and trigger background fetch
-    if (results.length > 0) {
-        res.json(results); // send partial cached data immediately
-
-        // Background: fetch remaining stocks without blocking the response
-        (async () => {
-            for (const stock of toFetch) {
-                try {
-                    const quote = await fetchAVQuote(stock.avSym);
-                    if (quote) {
-                        const entry = { symbol: stock.symbol, name: stock.name, ...quote };
-                        await cacheSet(`av_price:${stock.symbol}`, entry, TTL_PRICES);
-                        console.log(`✅ Cached ${stock.symbol}`);
-                    }
-                } catch (e) {
-                    console.error(`❌ ${stock.symbol}:`, e.message);
-                }
-                await sleep(13000); // 13s = safely under 5 req/min
-            }
-        })();
-        return;
-    }
-
-    // No cached data at all — fetch first stock, return it, rest in background
     try {
-        const first = toFetch[0];
-        const quote = await fetchAVQuote(first.avSym);
-        const firstEntry = quote
-            ? { symbol: first.symbol, name: first.name, ...quote }
-            : null;
+        // NIFTY 50 endpoint — returns all 50 stocks in one shot
+        const data = await nseGet('/api/equity-stockIndices?index=NIFTY%2050');
 
-        if (firstEntry) {
-            await cacheSet(`av_price:${first.symbol}`, firstEntry, TTL_PRICES);
-            results.push(firstEntry);
+        if (!data?.data?.length) {
+            console.error('NSE prices: empty response');
+            return res.json([]);
         }
 
-        res.json(results);
+        const prices = data.data
+            .filter(s => requestedSymbols.includes(s.symbol))
+            .map(s => ({
+                symbol:        s.symbol + '.NS',
+                name:          s.meta?.companyName || s.symbol,
+                price:         s.lastPrice         || 0,
+                change:        s.change            || 0,
+                changePercent: s.pChange           || 0,
+                open:          s.open              || 0,
+                high:          s.dayHigh           || 0,
+                low:           s.dayLow            || 0,
+                volume:        s.totalTradedVolume || 0,
+            }));
 
-        // Background: fetch the rest
-        (async () => {
-            for (const stock of toFetch.slice(1)) {
-                await sleep(13000);
-                try {
-                    const q = await fetchAVQuote(stock.avSym);
-                    if (q) {
-                        const entry = { symbol: stock.symbol, name: stock.name, ...q };
-                        await cacheSet(`av_price:${stock.symbol}`, entry, TTL_PRICES);
-                        console.log(`✅ Cached ${stock.symbol}`);
-                    }
-                } catch (e) {
-                    console.error(`❌ ${stock.symbol}:`, e.message);
-                }
-            }
-        })();
+        console.log(`✅ NSE prices: ${prices.length} stocks`);
+        if (prices.length > 0) await cacheSet(cacheKey, prices, TTL_PRICES);
+        res.json(prices);
+
     } catch (error) {
-        console.error('Prices error:', error.message);
-        res.status(500).json({ message: error.message });
+        console.error('NSE prices error:', error.message);
+        // Try refreshing session and retry once
+        _session = { cookie: '', ts: 0 };
+        res.status(502).json({ message: 'NSE data temporarily unavailable', error: error.message });
     }
 });
 
 // ── GET /:symbol/history ─────────────────────────────────────────────────────
 router.get('/:symbol/history', async (req, res) => {
     const { symbol } = req.params;
-    const cacheKey = `av_hist:${symbol}`;
+    const range = req.query.range || '3mo';
+
+    const cacheKey = `nse_hist:${symbol}:${range}`;
     const cached = await cacheGet(cacheKey);
     if (cached) return res.json(cached);
 
-    if (!AV_KEY) return res.status(500).json({ message: 'Stock API key not configured' });
-
     try {
-        const stock = STOCK_MAP.find(s => s.symbol === symbol);
-        if (!stock) return res.status(404).json({ message: 'Symbol not found' });
+        const sym = symbol.replace('.NS', '');
 
-        const url = `${AV_BASE}?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(stock.avSym)}&outputsize=compact&apikey=${AV_KEY}`;
-        const resp = await fetch(url);
-        const data = await resp.json();
-
-        const series = data['Time Series (Daily)'];
-        if (!series) {
-            console.error('History error for', symbol, data);
-            return res.json({ quotes: [] });
+        // Build date range
+        const to = new Date();
+        const from = new Date();
+        switch (range) {
+            case '1mo': from.setMonth(from.getMonth() - 1); break;
+            case '3mo': from.setMonth(from.getMonth() - 3); break;
+            case '6mo': from.setMonth(from.getMonth() - 6); break;
+            case '1y':  from.setFullYear(from.getFullYear() - 1); break;
+            case '2y':  from.setFullYear(from.getFullYear() - 2); break;
+            default:    from.setMonth(from.getMonth() - 3);
         }
 
-        const quotes = Object.entries(series)
-            .slice(0, 90) // last 90 trading days (~3 months)
-            .map(([date, v]) => ({
-                date: new Date(date),
-                open:   parseFloat(v['1. open']),
-                high:   parseFloat(v['2. high']),
-                low:    parseFloat(v['3. low']),
-                close:  parseFloat(v['4. close']),
-                volume: parseInt(v['5. volume']) || 0,
+        const fmt = d => d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+        const path = `/api/historical/cm/equity?symbol=${encodeURIComponent(sym)}&series=["EQ"]&from=${fmt(from)}&to=${fmt(to)}&csv=false`;
+
+        const data = await nseGet(path);
+
+        if (!data?.data?.length) return res.json({ quotes: [] });
+
+        const quotes = data.data
+            .map(q => ({
+                date:   new Date(q.CH_TIMESTAMP),
+                open:   parseFloat(q.CH_OPENING_PRICE)  || 0,
+                high:   parseFloat(q.CH_TRADE_HIGH_PRICE) || 0,
+                low:    parseFloat(q.CH_TRADE_LOW_PRICE)  || 0,
+                close:  parseFloat(q.CH_CLOSING_PRICE)   || 0,
+                volume: parseInt(q.CH_TOT_TRADED_QTY)    || 0,
             }))
+            .filter(q => q.open && q.close)
             .reverse(); // oldest first for charts
 
         const payload = { quotes, symbol };
         await cacheSet(cacheKey, payload, TTL_HISTORY);
         res.json(payload);
+
     } catch (error) {
-        console.error('History error:', error.message);
-        res.status(500).json({ message: error.message });
+        console.error('NSE history error:', error.message);
+        _session = { cookie: '', ts: 0 };
+        res.status(502).json({ message: 'NSE history temporarily unavailable', error: error.message });
     }
 });
 
-// ── GET /quote/:symbol ───────────────────────────────────────────────────────
+// ── GET /quote/:symbol ────────────────────────────────────────────────────────
 router.get('/quote/:symbol', async (req, res) => {
     const { symbol } = req.params;
-    const cached = await cacheGet(`av_price:${symbol}`);
-    if (cached) return res.json({ symbol, price: cached.price, changePercent: cached.changePercent });
-
-    if (!AV_KEY) return res.status(500).json({ message: 'Stock API key not configured' });
+    const cacheKey = `nse_quote:${symbol}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return res.json(cached);
 
     try {
-        const stock = STOCK_MAP.find(s => s.symbol === symbol);
-        if (!stock) return res.status(404).json({ message: 'Symbol not found' });
+        const sym = symbol.replace('.NS', '');
+        const data = await nseGet(`/api/quote-equity?symbol=${encodeURIComponent(sym)}`);
 
-        const q = await fetchAVQuote(stock.avSym);
-        if (!q) return res.status(502).json({ message: 'No data returned' });
+        const pd = data?.priceInfo;
+        if (!pd) throw new Error('No price info');
 
-        const entry = { symbol, name: stock.name, ...q };
-        await cacheSet(`av_price:${symbol}`, entry, TTL_PRICES);
-        res.json({ symbol, price: q.price, changePercent: q.changePercent });
+        const payload = {
+            symbol,
+            price:         pd.lastPrice          || 0,
+            changePercent: pd.pChange            || 0,
+        };
+        await cacheSet(cacheKey, payload, TTL_PRICES);
+        res.json(payload);
+
     } catch (error) {
-        console.error('Quote error:', error.message);
-        res.status(500).json({ message: error.message });
+        console.error('NSE quote error:', error.message);
+        _session = { cookie: '', ts: 0 };
+        res.status(502).json({ message: error.message });
     }
 });
 
