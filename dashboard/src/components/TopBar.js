@@ -35,16 +35,16 @@ const TopBar = () => {
   useEffect(() => {
     const fetchIndices = async () => {
       try {
-        const res  = await fetch(`${API_URL}/api/stocks/prices?symbols=%5ENSEI,%5EBSESN`);
+        const res  = await fetch(`${API_URL}/api/stocks/indices`);
         const data = await res.json();
         setIndices({
-          nifty:  data.find(d => d.symbol === "^NSEI"),
-          sensex: data.find(d => d.symbol === "^BSESN"),
+          nifty:  data.nifty  || null,
+          sensex: data.sensex || null,
         });
       } catch (e) {}
     };
     fetchIndices();
-    const iv = setInterval(fetchIndices, 15000);
+    const iv = setInterval(fetchIndices, 30000);
     return () => clearInterval(iv);
   }, []);
 

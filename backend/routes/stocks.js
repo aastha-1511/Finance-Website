@@ -12,7 +12,8 @@ const STOCK_LIST = [
 
 const NSE_BASE    = 'https://www.nseindia.com';
 const TTL_PRICES  = 60;   // 60s — real-time enough
-const TTL_HISTORY = 300;  // 5 min for historical
+const TTL_HIST    = 600;  // 10 min for historical (Yahoo)
+const TTL_IDX     = 60;   // 60s for index data
 
 // ── NSE session management ────────────────────────────────────────────────────
 // NSE requires a cookie obtained by first visiting the homepage
@@ -111,59 +112,117 @@ router.get('/prices', async (req, res) => {
     }
 });
 
-// ── GET /:symbol/history ─────────────────────────────────────────────────────
-router.get('/:symbol/history', async (req, res) => {
-    const { symbol } = req.params;
-    const range = req.query.range || '3mo';
-
-    const cacheKey = `nse_hist:${symbol}:${range}`;
+// ── GET /indices  (NIFTY 50 + SENSEX for topbar) ─────────────────────────────
+router.get('/indices', async (req, res) => {
+    const cacheKey = 'nse_indices';
     const cached = await cacheGet(cacheKey);
     if (cached) return res.json(cached);
 
     try {
-        const sym = symbol.replace('.NS', '');
+        // NIFTY 50 from NSE
+        const niftyData = await nseGet('/api/allIndices');
+        const indices = niftyData?.data || [];
 
-        // Build date range
-        const to = new Date();
-        const from = new Date();
-        switch (range) {
-            case '1mo': from.setMonth(from.getMonth() - 1); break;
-            case '3mo': from.setMonth(from.getMonth() - 3); break;
-            case '6mo': from.setMonth(from.getMonth() - 6); break;
-            case '1y':  from.setFullYear(from.getFullYear() - 1); break;
-            case '2y':  from.setFullYear(from.getFullYear() - 2); break;
-            default:    from.setMonth(from.getMonth() - 3);
-        }
+        const nifty  = indices.find(i => i.index === 'NIFTY 50');
+        const sensex = indices.find(i => i.index === 'S&P BSE SENSEX');
 
-        const fmt = d => d.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
-        const path = `/api/historical/cm/equity?symbol=${encodeURIComponent(sym)}&series=["EQ"]&from=${fmt(from)}&to=${fmt(to)}&csv=false`;
+        const result = {
+            nifty: nifty ? {
+                symbol: '^NSEI',
+                name: 'NIFTY 50',
+                price: nifty.last,
+                change: nifty.variation,
+                changePercent: nifty.percentChange,
+            } : null,
+            sensex: sensex ? {
+                symbol: '^BSESN',
+                name: 'SENSEX',
+                price: sensex.last,
+                change: sensex.variation,
+                changePercent: sensex.percentChange,
+            } : null,
+        };
 
-        const data = await nseGet(path);
-
-        if (!data?.data?.length) return res.json({ quotes: [] });
-
-        const quotes = data.data
-            .map(q => ({
-                date:   new Date(q.CH_TIMESTAMP),
-                open:   parseFloat(q.CH_OPENING_PRICE)  || 0,
-                high:   parseFloat(q.CH_TRADE_HIGH_PRICE) || 0,
-                low:    parseFloat(q.CH_TRADE_LOW_PRICE)  || 0,
-                close:  parseFloat(q.CH_CLOSING_PRICE)   || 0,
-                volume: parseInt(q.CH_TOT_TRADED_QTY)    || 0,
-            }))
-            .filter(q => q.open && q.close)
-            .reverse(); // oldest first for charts
-
-        const payload = { quotes, symbol };
-        await cacheSet(cacheKey, payload, TTL_HISTORY);
-        res.json(payload);
-
+        await cacheSet(cacheKey, result, TTL_IDX);
+        res.json(result);
     } catch (error) {
-        console.error('NSE history error:', error.message);
+        console.error('Indices error:', error.message);
         _session = { cookie: '', ts: 0 };
-        res.status(502).json({ message: 'NSE history temporarily unavailable', error: error.message });
+        res.status(502).json({ message: error.message });
     }
 });
+
+// ── GET /:symbol/history  (Yahoo Finance v8 chart — no crumb needed) ──────────
+router.get('/:symbol/history', async (req, res) => {
+    const { symbol } = req.params;
+    const range    = req.query.range    || '3mo';
+    const interval = req.query.interval || '1d';
+
+    const cacheKey = `yf_hist:${symbol}:${range}:${interval}`;
+    const cached = await cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    try {
+        // Yahoo Finance v8 /chart/ endpoint — does NOT require a crumb/cookie
+        // Different from /v7/finance/quote which is blocked
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
+        const resp = await fetch(url, {
+            headers: {
+                'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept':          'application/json',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Referer':         'https://finance.yahoo.com/',
+            }
+        });
+
+        if (!resp.ok) {
+            // Fallback to query2 if query1 fails
+            const resp2 = await fetch(
+                `https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`,
+                {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                        'Accept': 'application/json',
+                    }
+                }
+            );
+            if (!resp2.ok) throw new Error(`Yahoo chart ${resp2.status}`);
+            const d2 = await resp2.json();
+            return buildHistoryResponse(d2, symbol, cacheKey, res);
+        }
+
+        const data = await resp.json();
+        return buildHistoryResponse(data, symbol, cacheKey, res);
+
+    } catch (error) {
+        console.error('History error:', error.message);
+        res.status(502).json({ message: error.message });
+    }
+});
+
+async function buildHistoryResponse(data, symbol, cacheKey, res) {
+    const result = data?.chart?.result?.[0];
+    if (!result) return res.json({ quotes: [] });
+
+    const ts     = result.timestamp || [];
+    const ohlcv  = result.indicators?.quote?.[0] || {};
+
+    const quotes = ts
+        .map((t, i) => ({
+            date:   new Date(t * 1000),
+            open:   parseFloat((ohlcv.open?.[i]  || 0).toFixed(2)),
+            high:   parseFloat((ohlcv.high?.[i]  || 0).toFixed(2)),
+            low:    parseFloat((ohlcv.low?.[i]   || 0).toFixed(2)),
+            close:  parseFloat((ohlcv.close?.[i] || 0).toFixed(2)),
+            volume: ohlcv.volume?.[i] || 0,
+        }))
+        .filter(q => q.open && q.close);
+
+    const payload = { quotes, symbol };
+    await cacheSet(cacheKey, payload, TTL_HIST);
+    res.json(payload);
+}
+
 
 // ── GET /quote/:symbol ────────────────────────────────────────────────────────
 router.get('/quote/:symbol', async (req, res) => {
