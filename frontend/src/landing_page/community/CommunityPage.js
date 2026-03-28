@@ -35,7 +35,7 @@ const CommunityPage = () => {
     // Redirect if not logged in
     useEffect(() => {
         if (!user) navigate('/login');
-    }, []);
+    }, [navigate, user]);
 
     const [activeTab, setActiveTab] = useState('blogs');   // 'blogs' | 'groups'
     const [blogs, setBlogs] = useState([]);

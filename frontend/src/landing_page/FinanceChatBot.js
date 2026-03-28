@@ -25,7 +25,7 @@ export default function FinanceChatBot() {
         },
       ]);
     }
-  }, [open]);
+  }, [open, messages.length]);
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
