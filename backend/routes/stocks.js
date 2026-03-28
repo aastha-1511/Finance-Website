@@ -4,8 +4,16 @@ import { cacheGet, cacheSet } from '../utils/cache.js';
 
 const router = express.Router();
 
-// v3 requires instantiation
-const yf = new YahooFinance();
+// Pass a browser-like User-Agent so Yahoo Finance doesn't block server requests
+const yf = new YahooFinance({
+    fetchOptions: {
+        headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+    }
+});
 
 const STOCK_LIST = [
     'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'SBIN.NS',
@@ -14,9 +22,9 @@ const STOCK_LIST = [
 ];
 
 // Cache TTLs (seconds)
-const TTL_PRICES = 12;   // live prices polled every 10s by frontend — keep tight
-const TTL_QUOTE = 12;
-const TTL_HISTORY = 300;  // candlestick history barely changes within 5 min
+const TTL_PRICES = 30;
+const TTL_QUOTE = 30;
+const TTL_HISTORY = 300;
 
 // GET live prices for multiple symbols
 router.get('/prices', async (req, res) => {
@@ -46,11 +54,18 @@ router.get('/prices', async (req, res) => {
             })
         );
 
+        // Log failures for debugging in production
+        results.forEach((r, i) => {
+            if (r.status === 'rejected') {
+                console.error(`❌ Failed to fetch ${symbols[i]}:`, r.reason?.message);
+            }
+        });
+
         const prices = results
             .filter(r => r.status === 'fulfilled')
             .map(r => r.value);
 
-        await cacheSet(cacheKey, prices, TTL_PRICES);
+        if (prices.length > 0) await cacheSet(cacheKey, prices, TTL_PRICES);
         res.json(prices);
     } catch (error) {
         console.error('Prices error:', error.message);
