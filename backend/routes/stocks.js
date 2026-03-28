@@ -1,146 +1,161 @@
 import express from 'express';
-import YahooFinance from 'yahoo-finance2';
 import { cacheGet, cacheSet } from '../utils/cache.js';
 
 const router = express.Router();
 
-// Pass a browser-like User-Agent so Yahoo Finance doesn't block server requests
-const yf = new YahooFinance({
-    fetchOptions: {
-        headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-        }
-    }
-});
+const TD_KEY = process.env.TWELVE_DATA_API_KEY;
+const TD_BASE = 'https://api.twelvedata.com';
 
+// NSE stock list (without .NS suffix — Twelve Data uses SYMBOL:NSE format)
 const STOCK_LIST = [
-    'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'SBIN.NS',
-    'ICICIBANK.NS', 'ITC.NS', 'WIPRO.NS', 'BAJFINANCE.NS', 'AXISBANK.NS',
-    'KOTAKBANK.NS', 'HINDUNILVR.NS', 'TITAN.NS', 'ADANIENT.NS', 'ONGC.NS'
+    'RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'SBIN',
+    'ICICIBANK', 'ITC', 'WIPRO', 'BAJFINANCE', 'AXISBANK',
+    'KOTAKBANK', 'HINDUNILVR', 'TITAN', 'ADANIENT', 'ONGC'
 ];
 
 // Cache TTLs (seconds)
-const TTL_PRICES = 30;
-const TTL_QUOTE = 30;
+const TTL_PRICES = 60;
+const TTL_QUOTE  = 60;
 const TTL_HISTORY = 300;
 
-// GET live prices for multiple symbols
-router.get('/prices', async (req, res) => {
-    const symbols = req.query.symbols
-        ? req.query.symbols.split(',')
-        : STOCK_LIST;
+// Helpers: convert between formats
+// RELIANCE.NS  →  RELIANCE:NSE
+const toTD = (sym) => sym.replace('.NS', '') + ':NSE';
+// RELIANCE:NSE  →  RELIANCE.NS
+const fromTD = (sym) => sym.replace(':NSE', '.NS');
 
-    const cacheKey = `prices:${symbols.join(',')}`;
+// ── GET /prices  (batch, used by Markets / Holdings / Positions) ─────────────
+router.get('/prices', async (req, res) => {
+    const inputSymbols = req.query.symbols
+        ? req.query.symbols.split(',')
+        : STOCK_LIST.map(s => s + '.NS');
+
+    const cacheKey = `prices_td:${inputSymbols.join(',')}`;
     const cached = await cacheGet(cacheKey);
     if (cached) return res.json(cached);
 
     try {
-        const results = await Promise.allSettled(
-            symbols.map(async (sym) => {
-                const q = await yf.quote(sym, {}, { validateResult: false });
-                return {
-                    symbol: sym,
-                    name: q.shortName || sym.replace('.NS', ''),
-                    price: q.regularMarketPrice || 0,
-                    change: q.regularMarketChange || 0,
-                    changePercent: q.regularMarketChangePercent || 0,
-                    open: q.regularMarketOpen || 0,
-                    high: q.regularMarketDayHigh || 0,
-                    low: q.regularMarketDayLow || 0,
-                    volume: q.regularMarketVolume || 0
-                };
-            })
-        );
+        if (!TD_KEY) {
+            console.error('TWELVE_DATA_API_KEY is not set');
+            return res.status(500).json({ message: 'Stock API key not configured' });
+        }
 
-        // Log failures for debugging in production
-        results.forEach((r, i) => {
-            if (r.status === 'rejected') {
-                console.error(`❌ Failed to fetch ${symbols[i]}:`, r.reason?.message);
-            }
-        });
+        // Twelve Data supports batch requests in one call
+        const tdSymbols = inputSymbols.map(toTD).join(',');
+        const url = `${TD_BASE}/quote?symbol=${encodeURIComponent(tdSymbols)}&apikey=${TD_KEY}`;
 
-        const prices = results
-            .filter(r => r.status === 'fulfilled')
-            .map(r => r.value);
+        const response = await fetch(url);
+        const data = await response.json();
 
+        // Twelve Data returns a flat object for single symbol, nested for multiple
+        // Normalise to always be an array of [key, value] pairs
+        let entries;
+        if (data.symbol) {
+            // Single symbol response
+            entries = [[data.symbol + ':NSE', data]];
+        } else {
+            entries = Object.entries(data);
+        }
+
+        const prices = entries
+            .filter(([, q]) => q && !q.code && q.close) // skip error objects
+            .map(([key, q]) => ({
+                symbol: fromTD(key),
+                name: q.name || key.replace(':NSE', ''),
+                price: parseFloat(q.close) || 0,
+                change: parseFloat(q.change) || 0,
+                changePercent: parseFloat(q.percent_change) || 0,
+                open: parseFloat(q.open) || 0,
+                high: parseFloat(q.high) || 0,
+                low: parseFloat(q.low) || 0,
+                volume: parseInt(q.volume) || 0,
+            }));
+
+        console.log(`✅ Fetched ${prices.length}/${inputSymbols.length} stock prices`);
         if (prices.length > 0) await cacheSet(cacheKey, prices, TTL_PRICES);
         res.json(prices);
+
     } catch (error) {
         console.error('Prices error:', error.message);
         res.status(500).json({ message: error.message });
     }
 });
 
-// GET historical OHLC for candlestick charts
+// ── GET /:symbol/history  (candlestick charts) ───────────────────────────────
 router.get('/:symbol/history', async (req, res) => {
     const { symbol } = req.params;
-    const interval = req.query.interval || '1d';
+    const interval = req.query.interval || '1day';
     const range = req.query.range || '3mo';
 
-    const cacheKey = `history:${symbol}:${range}:${interval}`;
+    const cacheKey = `history_td:${symbol}:${range}:${interval}`;
     const cached = await cacheGet(cacheKey);
     if (cached) return res.json(cached);
 
     try {
-        // v3 removed 'range' param — must use period1 (start date)
-        const period1 = new Date();
-        switch (range) {
-            case '1mo': period1.setMonth(period1.getMonth() - 1); break;
-            case '3mo': period1.setMonth(period1.getMonth() - 3); break;
-            case '6mo': period1.setMonth(period1.getMonth() - 6); break;
-            case '1y': period1.setFullYear(period1.getFullYear() - 1); break;
-            case '2y': period1.setFullYear(period1.getFullYear() - 2); break;
-            default: period1.setMonth(period1.getMonth() - 3);
-        }
+        if (!TD_KEY) return res.status(500).json({ message: 'Stock API key not configured' });
 
-        const result = await yf.chart(
-            symbol,
-            { period1: period1.toISOString().split('T')[0], interval },
-            { validateResult: false }
-        );
+        // Map range to outputsize (number of data points)
+        const outputSizeMap = { '1mo': 22, '3mo': 66, '6mo': 130, '1y': 252, '2y': 500 };
+        const outputsize = outputSizeMap[range] || 66;
 
-        if (!result?.quotes?.length) {
+        // Twelve Data interval: '1day' for daily candlesticks
+        const tdInterval = interval === '1d' ? '1day' : interval;
+        const tdSymbol = toTD(symbol);
+
+        const url = `${TD_BASE}/time_series?symbol=${encodeURIComponent(tdSymbol)}&interval=${tdInterval}&outputsize=${outputsize}&apikey=${TD_KEY}`;
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (!data.values?.length) {
             return res.json({ quotes: [] });
         }
 
-        const quotes = result.quotes
-            .filter(q => q.open != null && q.high != null && q.low != null && q.close != null)
+        const quotes = data.values
             .map(q => ({
-                date: q.date,
-                open: parseFloat(q.open.toFixed(2)),
-                high: parseFloat(q.high.toFixed(2)),
-                low: parseFloat(q.low.toFixed(2)),
-                close: parseFloat(q.close.toFixed(2)),
-                volume: q.volume || 0
-            }));
+                date: new Date(q.datetime),
+                open: parseFloat(q.open),
+                high: parseFloat(q.high),
+                low: parseFloat(q.low),
+                close: parseFloat(q.close),
+                volume: parseInt(q.volume) || 0,
+            }))
+            .reverse(); // Twelve Data returns newest first
 
         const payload = { quotes, symbol };
         await cacheSet(cacheKey, payload, TTL_HISTORY);
         res.json(payload);
+
     } catch (error) {
         console.error('History error:', error.message);
         res.status(500).json({ message: error.message });
     }
 });
 
-// GET single stock live price
+// ── GET /quote/:symbol  (single stock quick quote) ───────────────────────────
 router.get('/quote/:symbol', async (req, res) => {
     const { symbol } = req.params;
-    const cacheKey = `quote:${symbol}`;
+    const cacheKey = `quote_td:${symbol}`;
     const cached = await cacheGet(cacheKey);
     if (cached) return res.json(cached);
 
     try {
-        const q = await yf.quote(symbol, {}, { validateResult: false });
+        if (!TD_KEY) return res.status(500).json({ message: 'Stock API key not configured' });
+
+        const tdSymbol = toTD(symbol);
+        const url = `${TD_BASE}/quote?symbol=${encodeURIComponent(tdSymbol)}&apikey=${TD_KEY}`;
+        const response = await fetch(url);
+        const q = await response.json();
+
+        if (q.code) throw new Error(q.message || 'Twelve Data error');
+
         const payload = {
             symbol,
-            price: q.regularMarketPrice,
-            changePercent: q.regularMarketChangePercent
+            price: parseFloat(q.close) || 0,
+            changePercent: parseFloat(q.percent_change) || 0,
         };
         await cacheSet(cacheKey, payload, TTL_QUOTE);
         res.json(payload);
+
     } catch (error) {
         console.error('Quote error:', error.message);
         res.status(500).json({ message: error.message });
