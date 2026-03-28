@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import PricingHero from './hero';
+import PricingHero from './Hero';
 import PricingFAQ from './FAQ';
 import PricingCards from './Card';
 
