@@ -9,7 +9,7 @@ import FeaturesPage from './landing_page/features/FeaturesPage';
 import PricingPage from './landing_page/pricing/PricingPage';
 import SupportPage from './landing_page/support/SupportPage';
 import NotFound from './landing_page/NotFound';
-import Navbar from './landing_page/NavBar';
+import Navbar from './landing_page/Navbar';
 import Footer from './landing_page/Footer';
 import FinanceChatbot from './landing_page/FinanceChatBot';
 import CommunityPage from './landing_page/community/CommunityPage';
