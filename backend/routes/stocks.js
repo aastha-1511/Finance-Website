@@ -49,7 +49,7 @@ async function getSession() {
             .filter(Boolean)
             .join('; ');
         _session = { cookie, ts: Date.now() };
-        console.log('✅ NSE session refreshed');
+        console.log(' NSE session refreshed');
         return cookie;
     } catch (e) {
         console.error('NSE session error:', e.message);
@@ -139,10 +139,10 @@ router.get('/indices', async (req, res) => {
         let sensexEntry = null;
 
         if (sensexData.status === 'fulfilled') {
-            const result = sensexData.value?.chart?.result?.[0];
+            const sensexResult = sensexData.value?.chart?.result?.[0];
         
-            if (result) {
-                const meta = result.meta;
+            if (sensexResult) {
+                const meta = sensexResult.meta;
         
                 sensexEntry = {
                     price: meta.regularMarketPrice || 0,
