@@ -15,7 +15,7 @@ const TTL_PRICES  = 60;   // 60s — real-time enough
 const TTL_HIST    = 600;  // 10 min for historical (Yahoo)
 const TTL_IDX     = 60;   // 60s for index data
 
-// ── NSE session management ────────────────────────────────────────────────────
+// ── NSE session management 
 // NSE requires a cookie obtained by first visiting the homepage
 let _session = { cookie: '', ts: 0 };
 
@@ -66,7 +66,7 @@ async function nseGet(path) {
     return resp.json();
 }
 
-// ── GET /prices ───────────────────────────────────────────────────────────────
+// ── GET /prices 
 // Fetches ALL NIFTY 50 stocks in ONE call, filters our 15
 router.get('/prices', async (req, res) => {
     const requestedSymbols = req.query.symbols
@@ -100,7 +100,7 @@ router.get('/prices', async (req, res) => {
                 volume:        s.totalTradedVolume || 0,
             }));
 
-        console.log(`✅ NSE prices: ${prices.length} stocks`);
+        console.log(` NSE prices: ${prices.length} stocks`);
         if (prices.length > 0) await cacheSet(cacheKey, prices, TTL_PRICES);
         res.json(prices);
 
@@ -112,7 +112,7 @@ router.get('/prices', async (req, res) => {
     }
 });
 
-// ── GET /indices  (NIFTY 50 + SENSEX for topbar) ─────────────────────────────
+// ── GET /indices  (NIFTY 50 + SENSEX for topbar) 
 router.get('/indices', async (req, res) => {
     const cacheKey = 'nse_indices';
     const cached = await cacheGet(cacheKey);
@@ -123,7 +123,7 @@ router.get('/indices', async (req, res) => {
         const [niftyData, sensexData] = await Promise.allSettled([
             nseGet('/api/allIndices'),
             // BSE public API for Sensex — no auth needed
-            fetch('https://api.bseindia.com/BseIndiaAPI/api/SensexData/w', {
+            fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EBSESN?interval=1d&range=1d', {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                     'Referer': 'https://www.bseindia.com/',
@@ -136,17 +136,21 @@ router.get('/indices', async (req, res) => {
         const indices = niftyData.status === 'fulfilled' ? (niftyData.value?.data || []) : [];
         const niftyEntry = indices.find(i => i.index === 'NIFTY 50');
 
-        // SENSEX from BSE — response: { CurrValue, PrevValue, ... } or { Data: [{...}] }
         let sensexEntry = null;
+
         if (sensexData.status === 'fulfilled') {
-            const sd = sensexData.value;
-            // BSE SensexData format: { CurrValue, Change, PctChange } or array
-            const sRaw = Array.isArray(sd) ? sd[0] : sd?.Data?.[0] || sd;
-            if (sRaw?.CurrValue || sRaw?.IndexValue) {
+            const result = sensexData.value?.chart?.result?.[0];
+        
+            if (result) {
+                const meta = result.meta;
+        
                 sensexEntry = {
-                    price:         parseFloat(sRaw.CurrValue || sRaw.IndexValue) || 0,
-                    change:        parseFloat(sRaw.Change || 0),
-                    changePercent: parseFloat(sRaw.PctChange || sRaw.PercentChange || 0),
+                    price: meta.regularMarketPrice || 0,
+                    change: (meta.regularMarketPrice - meta.chartPreviousClose) || 0,
+                    changePercent: meta.chartPreviousClose
+                        ? ((meta.regularMarketPrice - meta.chartPreviousClose) /
+                            meta.chartPreviousClose) * 100
+                        : 0,
                 };
             }
         }
