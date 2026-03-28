@@ -34,7 +34,7 @@ const Orders = () => {
   if (loading) return <div style={{ padding: "30px" }}>Loading orders...</div>;
 
   return (
-    <div style={{ padding: "28px", maxWidth: "900px" }}>
+    <div style={{ padding: "28px", maxWidth: "900px", margin: "0 auto" }}>
       <h2 style={{ fontSize: "22px", fontWeight: "800", color: "#111827", marginBottom: "6px" }}>Orders</h2>
       <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "24px" }}>History of all your buy and sell transactions</p>
 

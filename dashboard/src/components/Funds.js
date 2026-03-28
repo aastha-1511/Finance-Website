@@ -81,7 +81,7 @@ const Funds = () => {
   );
 
   return (
-    <div style={{ padding: "28px", maxWidth: "880px" }}>
+    <div style={{ padding: "28px", maxWidth: "880px", margin: "0 auto" }}>
       <h2 style={{ fontSize: "22px", fontWeight: "800", color: "#111827", marginBottom: "4px" }}>Funds & Portfolio</h2>
       <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "24px" }}>Manage balance and track portfolio performance</p>
 
