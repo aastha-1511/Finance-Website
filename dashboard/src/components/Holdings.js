@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { API_URL } from "../config";
 
 const useDark = () => {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -25,7 +26,7 @@ const Holdings = () => {
         const token = localStorage.getItem("token");
         if (!token) return setLoading(false);
 
-        const { data } = await axios.get("http://localhost:5000/api/portfolio", {
+        const { data } = await axios.get(`${API_URL}/api/portfolio`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setPortfolio(data);
@@ -33,7 +34,7 @@ const Holdings = () => {
         // Fetch live prices for all positions
         if (data.positions?.length > 0) {
           const symbols = data.positions.map(p => p.symbol).join(",");
-          const priceRes = await axios.get(`http://localhost:5000/api/stocks/prices?symbols=${symbols}`);
+          const priceRes = await axios.get(`${API_URL}/api/stocks/prices?symbols=${symbols}`);
           const map = {};
           priceRes.data.forEach(s => { map[s.symbol] = s; });
           setLivePrices(map);

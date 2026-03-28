@@ -73,7 +73,7 @@ const CommunityPage = () => {
     const joinByCode = async () => {
         if (!inviteBarCode.trim()) return;
         try {
-            const { data } = await axios.post('http://localhost:5000/api/community/groups/join-by-code',
+            const { data } = await axios.post(`${API_URL}/api/community/groups/join-by-code`,
                 { inviteCode: inviteBarCode.trim() },
                 { headers: { Authorization: `Bearer ${getToken()}` } }
             );
@@ -89,13 +89,13 @@ const CommunityPage = () => {
 
     // ── Fetch data ───────────────────────────────────────────────────────────
     const fetchBlogs = async () => {
-        try { const { data } = await axios.get('http://localhost:5000/api/community/blogs'); setBlogs(data); }
+        try { const { data } = await axios.get(`${API_URL}/api/community/blogs`); setBlogs(data); }
         catch { }
     };
 
     const fetchGroups = async () => {
         try {
-            const { data } = await axios.get('http://localhost:5000/api/community/groups', {
+            const { data } = await axios.get(`${API_URL}/api/community/groups`, {
                 headers: { Authorization: `Bearer ${getToken()}` }
             });
             setGroups(data);
@@ -122,7 +122,7 @@ const CommunityPage = () => {
         setChatMessages([]);
         setActiveGroup(group);
         try {
-            const { data } = await axios.get(`http://localhost:5000/api/community/groups/${group._id}/messages`, {
+            const { data } = await axios.get(`${API_URL}/api/community/groups/${group._id}/messages`, {
                 headers: { Authorization: `Bearer ${getToken()}` }
             });
             setChatMessages(data);
@@ -133,7 +133,7 @@ const CommunityPage = () => {
     const handlePostBlog = async (e) => {
         e.preventDefault(); setIsPosting(true);
         try {
-            await axios.post('http://localhost:5000/api/community/blogs', {
+            await axios.post(`${API_URL}/api/community/blogs`, {
                 title: blogForm.title, content: blogForm.content,
                 tags: blogForm.tags.split(',').map(t => t.trim()).filter(Boolean)
             }, { headers: { Authorization: `Bearer ${getToken()}` } });
@@ -147,7 +147,7 @@ const CommunityPage = () => {
     const handleCreateGroup = async (e) => {
         e.preventDefault(); setIsPosting(true);
         try {
-            const { data } = await axios.post('http://localhost:5000/api/community/groups', groupForm, {
+            const { data } = await axios.post(`${API_URL}/api/community/groups`, groupForm, {
                 headers: { Authorization: `Bearer ${getToken()}` }
             });
             setGroups(prev => [data, ...prev]);
@@ -165,7 +165,7 @@ const CommunityPage = () => {
             return;
         }
         try {
-            const { data } = await axios.post(`http://localhost:5000/api/community/groups/${groupId}/join`,
+            const { data } = await axios.post(`${API_URL}/api/community/groups/${groupId}/join`,
                 { inviteCode }, { headers: { Authorization: `Bearer ${getToken()}` } });
             setGroups(prev => prev.map(g => g._id === groupId ? data : g));
         } catch (err) { alert(err.response?.data?.message || 'Failed to join'); }
@@ -174,7 +174,7 @@ const CommunityPage = () => {
     const handleLeaveGroup = async (groupId) => {
         if (!window.confirm('Leave this group?')) return;
         try {
-            await axios.post(`http://localhost:5000/api/community/groups/${groupId}/leave`, {},
+            await axios.post(`${API_URL}/api/community/groups/${groupId}/leave`, {},
                 { headers: { Authorization: `Bearer ${getToken()}` } });
             setGroups(prev => prev.map(g => g._id === groupId
                 ? { ...g, members: g.members.filter(m => (m._id || m) !== user._id) } : g));

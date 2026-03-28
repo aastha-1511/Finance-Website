@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { API_URL } from '../config';
 
 const useDark = () => {
     const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -51,8 +52,8 @@ const AIAssistant = ({ onClose }) => {
         const fetchPortfolio = async () => {
             try {
                 const [portRes, priceRes] = await Promise.all([
-                    axios.get('http://localhost:5000/api/portfolio', { headers: { Authorization: `Bearer ${token}` } }),
-                    axios.get('http://localhost:5000/api/stocks/prices')
+                    axios.get(`${API_URL}/api/portfolio`, { headers: { Authorization: `Bearer ${token}` } }),
+                    axios.get(`${API_URL}/api/stocks/prices`)
                 ]);
                 const positions = portRes.data.positions || [];
                 const orders = portRes.data.orders || [];
@@ -76,7 +77,7 @@ const AIAssistant = ({ onClose }) => {
         setMessages(m => [...m, { role: 'user', text: msg }]);
         setLoading(true);
         try {
-            const { data } = await axios.post('http://localhost:5000/api/ai/insights',
+            const { data } = await axios.post(`${API_URL}/api/ai/insights`,
                 { message: msg, portfolioSnapshot },
                 { headers: { Authorization: `Bearer ${token}` } }
             );

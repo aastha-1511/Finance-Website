@@ -39,7 +39,7 @@ const Funds = () => {
   const handleAdd = async () => {
     if (!addAmount || addAmount <= 0) return showMsg("Enter a valid amount", "error");
     try {
-      const { data } = await axios.post("http://localhost:5000/api/portfolio/funds/add",
+      const { data } = await axios.post(`${API_URL}/api/portfolio/funds/add`,
         { amount: Number(addAmount) }, { headers: { Authorization: `Bearer ${token}` } });
       setPortfolio(p => ({ ...p, balance: data.balance }));
       setAddAmount("");
@@ -50,7 +50,7 @@ const Funds = () => {
   const handleWithdraw = async () => {
     if (!withdrawAmount || withdrawAmount <= 0) return showMsg("Enter a valid amount", "error");
     try {
-      const { data } = await axios.post("http://localhost:5000/api/portfolio/funds/withdraw",
+      const { data } = await axios.post(`${API_URL}/api/portfolio/funds/withdraw`,
         { amount: Number(withdrawAmount) }, { headers: { Authorization: `Bearer ${token}` } });
       setPortfolio(p => ({ ...p, balance: data.balance }));
       setWithdrawAmount("");
