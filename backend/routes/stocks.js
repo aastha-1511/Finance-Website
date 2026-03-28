@@ -119,30 +119,54 @@ router.get('/indices', async (req, res) => {
     if (cached) return res.json(cached);
 
     try {
-        // NIFTY 50 from NSE
-        const niftyData = await nseGet('/api/allIndices');
-        const indices = niftyData?.data || [];
+        // Fetch NIFTY 50 (NSE) and SENSEX (BSE) in parallel
+        const [niftyData, sensexData] = await Promise.allSettled([
+            nseGet('/api/allIndices'),
+            // BSE public API for Sensex — no auth needed
+            fetch('https://api.bseindia.com/BseIndiaAPI/api/SensexData/w', {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Referer': 'https://www.bseindia.com/',
+                    'Accept': 'application/json',
+                }
+            }).then(r => r.json()),
+        ]);
 
-        const nifty  = indices.find(i => i.index === 'NIFTY 50');
-        const sensex = indices.find(i => i.index === 'S&P BSE SENSEX');
+        // NIFTY 50 from NSE allIndices
+        const indices = niftyData.status === 'fulfilled' ? (niftyData.value?.data || []) : [];
+        const niftyEntry = indices.find(i => i.index === 'NIFTY 50');
+
+        // SENSEX from BSE — response: { CurrValue, PrevValue, ... } or { Data: [{...}] }
+        let sensexEntry = null;
+        if (sensexData.status === 'fulfilled') {
+            const sd = sensexData.value;
+            // BSE SensexData format: { CurrValue, Change, PctChange } or array
+            const sRaw = Array.isArray(sd) ? sd[0] : sd?.Data?.[0] || sd;
+            if (sRaw?.CurrValue || sRaw?.IndexValue) {
+                sensexEntry = {
+                    price:         parseFloat(sRaw.CurrValue || sRaw.IndexValue) || 0,
+                    change:        parseFloat(sRaw.Change || 0),
+                    changePercent: parseFloat(sRaw.PctChange || sRaw.PercentChange || 0),
+                };
+            }
+        }
 
         const result = {
-            nifty: nifty ? {
+            nifty: niftyEntry ? {
                 symbol: '^NSEI',
                 name: 'NIFTY 50',
-                price: nifty.last,
-                change: nifty.variation,
-                changePercent: nifty.percentChange,
+                price:         niftyEntry.last,
+                change:        niftyEntry.variation,
+                changePercent: niftyEntry.percentChange,
             } : null,
-            sensex: sensex ? {
+            sensex: sensexEntry ? {
                 symbol: '^BSESN',
                 name: 'SENSEX',
-                price: sensex.last,
-                change: sensex.variation,
-                changePercent: sensex.percentChange,
+                ...sensexEntry,
             } : null,
         };
 
+        console.log('Indices:', JSON.stringify({ nifty: result.nifty?.price, sensex: result.sensex?.price }));
         await cacheSet(cacheKey, result, TTL_IDX);
         res.json(result);
     } catch (error) {
@@ -151,6 +175,7 @@ router.get('/indices', async (req, res) => {
         res.status(502).json({ message: error.message });
     }
 });
+
 
 // ── GET /:symbol/history  (Yahoo Finance v8 chart — no crumb needed) ──────────
 router.get('/:symbol/history', async (req, res) => {
