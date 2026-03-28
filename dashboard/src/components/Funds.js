@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { API_URL } from "../config";
 
@@ -11,7 +11,7 @@ const Funds = () => {
   const [message, setMessage] = useState({ text: "", type: "" });
   const token = localStorage.getItem("token");
 
-  const fetchPortfolio = async () => {
+  const fetchPortfolio = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API_URL}/api/portfolio`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -27,9 +27,9 @@ const Funds = () => {
       }
     } catch { }
     finally { setLoading(false); }
-  };
+  }, [token]);
 
-  useEffect(() => { fetchPortfolio(); }, []);
+  useEffect(() => { fetchPortfolio(); }, [fetchPortfolio]);
 
   const showMsg = (text, type) => {
     setMessage({ text, type });
@@ -141,7 +141,7 @@ const Funds = () => {
           <div style={{ display: "flex", gap: "8px", marginBottom: "12px", flexWrap: "wrap" }}>
             {[5000, 10000, 25000, 50000].map(amt => (
               <button key={amt} onClick={() => setAddAmount(String(amt))}
-                style={{ padding: "6px 14px", borderRadius: "20px", border: "1.5px solid #6366f1", background: addAmount == amt ? "#6366f1" : "#fff", color: addAmount == amt ? "#fff" : "#6366f1", fontSize: "13px", fontWeight: "600", cursor: "pointer" }}>
+                style={{ padding: "6px 14px", borderRadius: "20px", border: "1.5px solid #6366f1", background: addAmount === String(amt) ? "#6366f1" : "#fff", color: addAmount === String(amt) ? "#fff" : "#6366f1", fontSize: "13px", fontWeight: "600", cursor: "pointer" }}>
                 ₹{amt / 1000}K
               </button>
             ))}

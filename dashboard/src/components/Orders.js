@@ -29,7 +29,7 @@ const Orders = () => {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [token]);
 
   if (loading) return <div style={{ padding: "30px" }}>Loading orders...</div>;
 

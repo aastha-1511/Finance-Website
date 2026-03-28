@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import { API_URL } from "../config";
 
 const useDark = () => {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
@@ -48,7 +47,6 @@ const Holdings = () => {
     fetchHoldings();
   }, []);
 
-  const bg = dark ? "#0f172a" : "#f8fafc";
   const card = dark ? "#1e293b" : "#ffffff";
   const border = dark ? "#334155" : "#e5e7eb";
   const txt = dark ? "#f1f5f9" : "#111827";

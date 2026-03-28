@@ -28,7 +28,7 @@ const Positions = () => {
       finally { setLoading(false); }
     };
     load();
-  }, []);
+  }, [token]);
 
   if (loading) return <div style={{ padding: "30px" }}>Loading positions...</div>;
 
