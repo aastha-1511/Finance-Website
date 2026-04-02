@@ -118,54 +118,37 @@ router.get('/indices', async (req, res) => {
     if (cached) return res.json(cached);
 
     try {
-        // Fetch NIFTY 50 (NSE) and SENSEX (BSE) in parallel
         const [niftyData, sensexData] = await Promise.allSettled([
             nseGet('/api/allIndices'),
-            // BSE public API for Sensex — no auth needed
-            fetch('https://api.bseindia.com/BseIndiaAPI/api/SensexData/w', {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Referer': 'https://www.bseindia.com/',
-                    'Accept': 'application/json',
-                }
-            }).then(r => r.json()),
+            fetch('https://query1.finance.yahoo.com/v8/finance/chart/%5EBSESN?interval=1d&range=1d')
+                .then(r => r.json())
+                .catch(() => fetch('https://api.bseindia.com/BseIndiaAPI/api/SensexData/w', {
+                    headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.bseindia.com/' }
+                }).then(r => r.json()))
         ]);
 
-        // NIFTY 50 from NSE allIndices
         const indices = niftyData.status === 'fulfilled' ? (niftyData.value?.data || []) : [];
         const niftyEntry = indices.find(i => i.index === 'NIFTY 50');
 
-        // SENSEX from BSE — response: { CurrValue, PrevValue, ... } or { Data: [{...}] }
         let sensexEntry = null;
         if (sensexData.status === 'fulfilled') {
             const sd = sensexData.value;
-            // BSE SensexData format: { CurrValue, Change, PctChange } or array
-            const sRaw = Array.isArray(sd) ? sd[0] : sd?.Data?.[0] || sd;
-            if (sRaw?.CurrValue || sRaw?.IndexValue) {
-                sensexEntry = {
-                    price: parseFloat(sRaw.CurrValue || sRaw.IndexValue) || 0,
-                    change: parseFloat(sRaw.Change || 0),
-                    changePercent: parseFloat(sRaw.PctChange || sRaw.PercentChange || 0),
-                };
+            if (sd?.chart?.result?.[0]?.meta) {
+                const m = sd.chart.result[0].meta;
+                sensexEntry = { price: m.regularMarketPrice, change: m.regularMarketPrice - m.previousClose, changePercent: ((m.regularMarketPrice - m.previousClose) / m.previousClose) * 100 };
+            } else {
+                const sRaw = Array.isArray(sd) ? sd[0] : sd?.Data?.[0] || sd;
+                if (sRaw?.CurrValue || sRaw?.IndexValue) {
+                    sensexEntry = { price: parseFloat(sRaw.CurrValue || sRaw.IndexValue) || 0, change: parseFloat(sRaw.Change || 0), changePercent: parseFloat(sRaw.PctChange || sRaw.PercentChange || 0) };
+                }
             }
         }
 
         const result = {
-            nifty: niftyEntry ? {
-                symbol: '^NSEI',
-                name: 'NIFTY 50',
-                price: niftyEntry.last,
-                change: niftyEntry.variation,
-                changePercent: niftyEntry.percentChange,
-            } : null,
-            sensex: sensexEntry ? {
-                symbol: '^BSESN',
-                name: 'SENSEX',
-                ...sensexEntry,
-            } : null,
+            nifty: niftyEntry ? { symbol: '^NSEI', name: 'NIFTY 50', price: niftyEntry.last, change: niftyEntry.variation, changePercent: niftyEntry.percentChange } : null,
+            sensex: sensexEntry ? { symbol: '^BSESN', name: 'SENSEX', ...sensexEntry } : null,
         };
 
-        console.log('Indices:', JSON.stringify({ nifty: result.nifty?.price, sensex: result.sensex?.price }));
         await cacheSet(cacheKey, result, TTL_IDX);
         res.json(result);
     } catch (error) {
