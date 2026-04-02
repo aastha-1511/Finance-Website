@@ -88,7 +88,7 @@ const Holdings = () => {
   ];
 
   return (
-    <div style={{ padding: "28px", maxWidth: "1100px" }}>
+    <div style={{ padding: "28px", maxWidth: "1100px", margin: "0 auto", width: "100%" }}>
       {/* Header */}
       <div style={{ marginBottom: "24px" }}>
         <h2 style={{ fontSize: "22px", fontWeight: "800", color: txt, margin: 0 }}>

@@ -44,7 +44,7 @@ const Positions = () => {
   const totalPnl = totalCurrent - totalInvested;
 
   return (
-    <div style={{ padding: "28px", maxWidth: "1000px" }}>
+    <div style={{ padding: "28px", maxWidth: "1000px", margin: "0 auto", width: "100%" }}>
       <h2 style={{ fontSize: "22px", fontWeight: "800", color: "#111827", marginBottom: "6px" }}>Positions</h2>
       <p style={{ color: "#9ca3af", fontSize: "14px", marginBottom: "20px" }}>Your current open positions with live P&L</p>
 
