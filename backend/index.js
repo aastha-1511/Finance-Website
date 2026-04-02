@@ -62,7 +62,7 @@ io.on("connection", (socket) => {
     io.to(data.groupId).emit("receive_message", data);
   });
 
-  // ── WebRTC signaling ─────────────────────────────────────────────────────
+  // WebRTC signaling
   const webrtcRooms = {};  // roomId -> [socketId, ...]
 
   socket.on("webrtc:join", ({ roomId, userName }) => {
@@ -104,7 +104,7 @@ io.on("connection", (socket) => {
     socket.to(`webrtc:${roomId}`).emit("webrtc:peer-left");
     socket.leave(`webrtc:${roomId}`);
   });
-  // ─────────────────────────────────────────────────────────────────────────
+
 
   socket.on("disconnect", () => {
     console.log("Client disconnected:", socket.id);

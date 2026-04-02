@@ -22,7 +22,7 @@ const protect = async (req, res, next) => {
     }
 };
 
-// ─── BLOGS ────────────────────────────────────────────────
+// BLOGS
 router.get('/blogs', async (req, res) => {
     try {
         const blogs = await Blog.find().populate('author', 'name').sort({ createdAt: -1 });
@@ -39,7 +39,7 @@ router.post('/blogs', protect, async (req, res) => {
     } catch (error) { res.status(500).json({ message: error.message }); }
 });
 
-// ─── GROUPS ───────────────────────────────────────────────
+// GROUPS
 
 // GET all groups — private groups only shown to their members
 router.get('/groups', async (req, res) => {

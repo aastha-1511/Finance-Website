@@ -64,7 +64,7 @@ router.post('/funds/withdraw', protect, async (req, res) => {
 // POST buy stock (checks balance)
 router.post('/buy', protect, async (req, res) => {
     try {
-        // ── Market hours check ──
+        // Market hours check
         const market = checkMarketOpen();
         if (!market.isOpen) return res.status(403).json({ message: market.reason, marketClosed: true });
 
@@ -102,7 +102,7 @@ router.post('/buy', protect, async (req, res) => {
 // POST sell stock (credits balance)
 router.post('/sell', protect, async (req, res) => {
     try {
-        // ── Market hours check ──
+        // Market hours check
         const market = checkMarketOpen();
         if (!market.isOpen) return res.status(403).json({ message: market.reason, marketClosed: true });
 

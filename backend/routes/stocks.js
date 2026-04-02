@@ -10,22 +10,22 @@ const STOCK_LIST = [
     'KOTAKBANK', 'HINDUNILVR', 'TITAN', 'ADANIENT', 'ONGC'
 ];
 
-const NSE_BASE    = 'https://www.nseindia.com';
-const TTL_PRICES  = 60;   // 60s — real-time enough
-const TTL_HIST    = 600;  // 10 min for historical (Yahoo)
-const TTL_IDX     = 60;   // 60s for index data
+const NSE_BASE = 'https://www.nseindia.com';
+const TTL_PRICES = 60;   // 60s — real-time enough
+const TTL_HIST = 600;  // 10 min for historical (Yahoo)
+const TTL_IDX = 60;   // 60s for index data
 
-// ── NSE session management ────────────────────────────────────────────────────
+// NSE session management
 // NSE requires a cookie obtained by first visiting the homepage
 let _session = { cookie: '', ts: 0 };
 
 const NSE_HEADERS = {
-    'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Accept':          'application/json, text/plain, */*',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'en-US,en;q=0.5',
     'Accept-Encoding': 'gzip, deflate, br',
-    'Referer':         'https://www.nseindia.com/',
-    'Connection':      'keep-alive',
+    'Referer': 'https://www.nseindia.com/',
+    'Connection': 'keep-alive',
 };
 
 async function getSession() {
@@ -66,8 +66,7 @@ async function nseGet(path) {
     return resp.json();
 }
 
-// ── GET /prices ───────────────────────────────────────────────────────────────
-// Fetches ALL NIFTY 50 stocks in ONE call, filters our 15
+// GET /prices - Fetches ALL NIFTY 50 stocks in ONE call, filters our 15
 router.get('/prices', async (req, res) => {
     const requestedSymbols = req.query.symbols
         ? req.query.symbols.split(',').map(s => s.replace('.NS', ''))
@@ -89,15 +88,15 @@ router.get('/prices', async (req, res) => {
         const prices = data.data
             .filter(s => requestedSymbols.includes(s.symbol))
             .map(s => ({
-                symbol:        s.symbol + '.NS',
-                name:          s.meta?.companyName || s.symbol,
-                price:         s.lastPrice         || 0,
-                change:        s.change            || 0,
-                changePercent: s.pChange           || 0,
-                open:          s.open              || 0,
-                high:          s.dayHigh           || 0,
-                low:           s.dayLow            || 0,
-                volume:        s.totalTradedVolume || 0,
+                symbol: s.symbol + '.NS',
+                name: s.meta?.companyName || s.symbol,
+                price: s.lastPrice || 0,
+                change: s.change || 0,
+                changePercent: s.pChange || 0,
+                open: s.open || 0,
+                high: s.dayHigh || 0,
+                low: s.dayLow || 0,
+                volume: s.totalTradedVolume || 0,
             }));
 
         console.log(`✅ NSE prices: ${prices.length} stocks`);
@@ -112,7 +111,7 @@ router.get('/prices', async (req, res) => {
     }
 });
 
-// ── GET /indices  (NIFTY 50 + SENSEX for topbar) ─────────────────────────────
+// GET /indices (NIFTY 50 + SENSEX for topbar)
 router.get('/indices', async (req, res) => {
     const cacheKey = 'nse_indices';
     const cached = await cacheGet(cacheKey);
@@ -144,8 +143,8 @@ router.get('/indices', async (req, res) => {
             const sRaw = Array.isArray(sd) ? sd[0] : sd?.Data?.[0] || sd;
             if (sRaw?.CurrValue || sRaw?.IndexValue) {
                 sensexEntry = {
-                    price:         parseFloat(sRaw.CurrValue || sRaw.IndexValue) || 0,
-                    change:        parseFloat(sRaw.Change || 0),
+                    price: parseFloat(sRaw.CurrValue || sRaw.IndexValue) || 0,
+                    change: parseFloat(sRaw.Change || 0),
                     changePercent: parseFloat(sRaw.PctChange || sRaw.PercentChange || 0),
                 };
             }
@@ -155,8 +154,8 @@ router.get('/indices', async (req, res) => {
             nifty: niftyEntry ? {
                 symbol: '^NSEI',
                 name: 'NIFTY 50',
-                price:         niftyEntry.last,
-                change:        niftyEntry.variation,
+                price: niftyEntry.last,
+                change: niftyEntry.variation,
                 changePercent: niftyEntry.percentChange,
             } : null,
             sensex: sensexEntry ? {
@@ -177,10 +176,10 @@ router.get('/indices', async (req, res) => {
 });
 
 
-// ── GET /:symbol/history  (Yahoo Finance v8 chart — no crumb needed) ──────────
+// GET /:symbol/history (Yahoo Finance v8 chart - no crumb needed)
 router.get('/:symbol/history', async (req, res) => {
     const { symbol } = req.params;
-    const range    = req.query.range    || '3mo';
+    const range = req.query.range || '3mo';
     const interval = req.query.interval || '1d';
 
     const cacheKey = `yf_hist:${symbol}:${range}:${interval}`;
@@ -193,10 +192,10 @@ router.get('/:symbol/history', async (req, res) => {
         const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`;
         const resp = await fetch(url, {
             headers: {
-                'User-Agent':      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept':          'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'application/json',
                 'Accept-Language': 'en-US,en;q=0.5',
-                'Referer':         'https://finance.yahoo.com/',
+                'Referer': 'https://finance.yahoo.com/',
             }
         });
 
@@ -229,16 +228,16 @@ async function buildHistoryResponse(data, symbol, cacheKey, res) {
     const result = data?.chart?.result?.[0];
     if (!result) return res.json({ quotes: [] });
 
-    const ts     = result.timestamp || [];
-    const ohlcv  = result.indicators?.quote?.[0] || {};
+    const ts = result.timestamp || [];
+    const ohlcv = result.indicators?.quote?.[0] || {};
 
     const quotes = ts
         .map((t, i) => ({
-            date:   new Date(t * 1000),
-            open:   parseFloat((ohlcv.open?.[i]  || 0).toFixed(2)),
-            high:   parseFloat((ohlcv.high?.[i]  || 0).toFixed(2)),
-            low:    parseFloat((ohlcv.low?.[i]   || 0).toFixed(2)),
-            close:  parseFloat((ohlcv.close?.[i] || 0).toFixed(2)),
+            date: new Date(t * 1000),
+            open: parseFloat((ohlcv.open?.[i] || 0).toFixed(2)),
+            high: parseFloat((ohlcv.high?.[i] || 0).toFixed(2)),
+            low: parseFloat((ohlcv.low?.[i] || 0).toFixed(2)),
+            close: parseFloat((ohlcv.close?.[i] || 0).toFixed(2)),
             volume: ohlcv.volume?.[i] || 0,
         }))
         .filter(q => q.open && q.close);
@@ -249,7 +248,7 @@ async function buildHistoryResponse(data, symbol, cacheKey, res) {
 }
 
 
-// ── GET /quote/:symbol ────────────────────────────────────────────────────────
+// GET /quote/:symbol
 router.get('/quote/:symbol', async (req, res) => {
     const { symbol } = req.params;
     const cacheKey = `nse_quote:${symbol}`;
@@ -265,8 +264,8 @@ router.get('/quote/:symbol', async (req, res) => {
 
         const payload = {
             symbol,
-            price:         pd.lastPrice          || 0,
-            changePercent: pd.pChange            || 0,
+            price: pd.lastPrice || 0,
+            changePercent: pd.pChange || 0,
         };
         await cacheSet(cacheKey, payload, TTL_PRICES);
         res.json(payload);
