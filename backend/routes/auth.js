@@ -17,12 +17,23 @@ router.post('/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
 
-        const userExists = await User.findOne({ email });
+        // Input validation
+        if (!name || typeof name !== 'string' || name.trim().length < 2) {
+            return res.status(400).json({ message: 'Name must be at least 2 characters.' });
+        }
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ message: 'A valid email address is required.' });
+        }
+        if (!password || password.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters.' });
+        }
+
+        const userExists = await User.findOne({ email: email.toLowerCase().trim() });
         if (userExists) {
             return res.status(400).json({ message: 'User already exists' });
         }
 
-        const user = await User.create({ name, email, password });
+        const user = await User.create({ name: name.trim(), email: email.toLowerCase().trim(), password });
 
         if (user) {
             res.status(201).json({
@@ -46,7 +57,15 @@ router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const user = await User.findOne({ email });
+        // Input validation
+        if (!email || !password) {
+            return res.status(400).json({ message: 'Email and password are required.' });
+        }
+        if (typeof email !== 'string' || typeof password !== 'string') {
+            return res.status(400).json({ message: 'Invalid input.' });
+        }
+
+        const user = await User.findOne({ email: email.toLowerCase().trim() });
 
         if (user && (await user.matchPassword(password))) {
             res.json({

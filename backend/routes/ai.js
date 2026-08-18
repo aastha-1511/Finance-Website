@@ -24,7 +24,20 @@ const protect = async (req, res, next) => {
 router.post('/insights', protect, async (req, res) => {
     try {
         const { message, portfolioSnapshot } = req.body;
-        if (!message) return res.status(400).json({ message: 'Message required' });
+
+        // Input guardrails
+        if (!message || typeof message !== 'string') {
+            return res.status(400).json({ message: 'Message is required.' });
+        }
+        if (message.trim().length === 0) {
+            return res.status(400).json({ message: 'Message cannot be empty.' });
+        }
+        if (message.length > 2000) {
+            return res.status(400).json({ message: 'Message too long. Please keep it under 2000 characters.' });
+        }
+
+        // Sanitize: strip prompt-injection attempts
+        const safeMessage = message.replace(/system:|assistant:|<\|.*?\|>/gi, '').trim();
 
         // Build portfolio context string
         let portfolioContext = '';
@@ -84,7 +97,7 @@ ${portfolioContext}`;
                     history: [],
                     generationConfig: { maxOutputTokens: 1024, temperature: 0.7 }
                 });
-                const result = await chat.sendMessage(`${systemPrompt}\n\nUser question: ${message}`);
+                const result = await chat.sendMessage(`${systemPrompt}\n\nUser question: ${safeMessage}`);
                 text = result.response.text();
                 break; // success
             } catch (e) {

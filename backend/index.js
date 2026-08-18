@@ -1,5 +1,7 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import http from "http";
 import { Server } from "socket.io";
@@ -33,7 +35,33 @@ const io = new Server(server, {
 connectDB();
 
 app.use(cors({ origin: allowedOrigins, methods: ["GET", "POST", "PUT", "DELETE"], credentials: true }));
-app.use(express.json());
+
+// Security headers
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// Body size limit — reject payloads over 50 kb
+app.use(express.json({ limit: "50kb" }));
+
+// General API rate limit: 200 requests per 15 min per IP
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please try again later." },
+});
+app.use("/api", apiLimiter);
+
+// Strict rate limit for AI chat: 20 requests per 10 min per IP
+const chatLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "AI chat limit reached. Please wait a few minutes." },
+});
+app.use("/api/chat", chatLimiter);
+app.use("/api/ai", chatLimiter);
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -118,6 +146,21 @@ const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 app.post("/api/chat", async (req, res) => {
   try {
     const { message } = req.body;
+
+    // Input guardrails
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ message: "Message is required." });
+    }
+    if (message.trim().length === 0) {
+      return res.status(400).json({ message: "Message cannot be empty." });
+    }
+    if (message.length > 1000) {
+      return res.status(400).json({ message: "Message too long. Please keep it under 1000 characters." });
+    }
+
+    // Sanitize: strip prompt-injection attempts
+    const safeMessage = message.replace(/system:|assistant:|<\|.*?\|>/gi, "").trim();
+
     const prompt = `You are FinanceHub AI, a knowledgeable financial assistant.
 
 You can help with: investing, mutual funds, SIPs, ETFs, personal finance, budgeting, tax planning, banking, loans, economic news, and cryptocurrency (informational only).
@@ -126,7 +169,7 @@ Do NOT answer questions about specific real-time or historical stock prices — 
 
 If asked something completely unrelated to finance, reply: "I focus on finance topics. Please ask me about investments, budgeting, or markets."
 
-User question: ${message}`;
+User question: ${safeMessage}`;
 
     const result = await model.generateContent(prompt);
     res.json({ reply: result.response.text() });
