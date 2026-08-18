@@ -37,7 +37,7 @@ connectDB();
 app.use(cors({ origin: allowedOrigins, methods: ["GET", "POST", "PUT", "DELETE"], credentials: true }));
 
 // Security headers
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
 
 // Body size limit — reject payloads over 50 kb
 app.use(express.json({ limit: "50kb" }));

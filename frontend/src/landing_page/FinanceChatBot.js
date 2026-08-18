@@ -6,7 +6,7 @@ import { API_URL } from "../config";
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000,
+  timeout: 30000,
 });
 
 export default function FinanceChatBot() {
@@ -51,13 +51,20 @@ export default function FinanceChatBot() {
     } catch (error) {
       console.error("Axios error:", error);
 
+      let errorMsg = "Sorry, I couldn't connect to the server. Please try again.";
+      if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+        errorMsg = "The response took too long. Please try again.";
+      } else if (error.response?.status === 429) {
+        errorMsg = "You've sent too many messages. Please wait a few minutes and try again.";
+      } else if (error.response?.status === 400) {
+        errorMsg = error.response?.data?.message || "Invalid request. Please rephrase your message.";
+      } else if (error.response?.status >= 500) {
+        errorMsg = "The AI service is temporarily unavailable. Please try again shortly.";
+      }
+
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content:
-            "Sorry, I couldn’t connect to the server. Please try again.",
-        },
+        { role: "assistant", content: errorMsg },
       ]);
     } finally {
       setLoading(false);
